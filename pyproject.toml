@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sqlalchemy_db2"
+description = "DB2 for SQLAlchemy (using pydrda)"
+keywords = ["SQLAlchemy", "DB2", "pydrda"]
+license = {file = "LICENSE"}
+authors = [
+    {name = "Hajime Nakagami", email="nakagami@gmail.com"},
+]
+maintainers = [
+    {name = "Hajime Nakagami", email="nakagami@gmail.com"},
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Topic :: Database :: Front-Ends",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "sqlalchemy>=2.0",
+    "ibm_db_sa>=0.4",
+    "pydrda>=0.6.1",
+]
+dynamic = ["readme", "version"]
+
+[project.entry-points."sqlalchemy.dialects"]
+"db2" = "sqlalchemy_db2.syn:DB2Dialect_syn"
+"db2.syn" = "sqlalchemy_db2.syn:DB2Dialect_syn"
+"db2.asyn" = "sqlalchemy_db2.asyn:DB2Dialect_asyn"
+
+[tool.setuptools.dynamic]
+readme = {file = ["README.rst"], content-type = "text/x-rst"}
+version = {attr = "sqlalchemy_db2.__version__"}
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+markers = [
+    "backend: mark test as a backend-specific test",
+]

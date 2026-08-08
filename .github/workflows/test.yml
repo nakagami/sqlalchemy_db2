@@ -1,0 +1,66 @@
+# This workflow will install Python dependencies, run tests with a variety of Python versions
+# For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
+
+name: Python package
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12', '3.13', '3.14']
+
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install -e . greenlet pytest
+
+    - name: Start db2 container
+      run: |
+        docker run -itd --name db2 --privileged=true -p 50000:50000 -e LICENSE=accept -e DB2INST1_PASSWORD=password -e DBNAME=testdb --platform=linux/amd64 icr.io/db2_community/db2
+
+    - name: Wait database create
+      timeout-minutes: 12
+      run: |
+        OK=0
+        for t in {0..140}; do
+          if python -c "import drda; c = drda.connect(host='localhost', database='testdb', user='db2inst1', password='password', port=50000); c.close()" 2>/dev/null; then
+            OK=$((OK+1))
+            if [ $OK -ge 3 ]; then
+              exit 0
+            fi
+          else
+            OK=0
+          fi
+          sleep 5
+        done
+        exit 1
+
+    - name: Test
+      run: |
+        python -m pytest test/ -q
+
+    - name: Test (asyncio, async_fallback)
+      run: |
+        python -c "
+        import sqlalchemy as sa
+        engine = sa.create_engine('db2+asyn://db2inst1:password@localhost:50000/testdb?async_fallback=true')
+        with engine.connect() as conn:
+            assert conn.scalar(sa.text('SELECT 1 FROM SYSIBM.SYSDUMMY1')) == 1
+        print('OK async_fallback')
+        "
