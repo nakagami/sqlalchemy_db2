@@ -5,10 +5,6 @@ A `SQLAlchemy <https://www.sqlalchemy.org/>`_ dialect for IBM DB2,
 backed by `pydrda <https://github.com/nakagami/pydrda>`_ (a pure Python
 DRDA protocol driver).
 
-The SQL compilation and reflection layer is reused from
-`ibm_db_sa <https://github.com/ibmdb/python-ibmdbsa>`_, so no IBM CLI
-driver is required.
-
 Usage
 -----
 
