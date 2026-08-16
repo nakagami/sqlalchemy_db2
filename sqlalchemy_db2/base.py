@@ -389,7 +389,12 @@ class DB2DDLCompiler(compiler.DDLCompiler):
 
 class DB2IdentifierPreparer(compiler.IdentifierPreparer):
     reserved_words = RESERVED_WORDS
-    illegal_initial_characters = set(range(0, 10)).union(["_", "$"])
+    illegal_initial_characters = {str(i) for i in range(10)}.union(["_", "$"])
+
+    def _requires_quotes(self, value: str) -> bool:
+        if not value:
+            return True
+        return super()._requires_quotes(value)
 
 
 class DB2ExecutionContext(default.DefaultExecutionContext):

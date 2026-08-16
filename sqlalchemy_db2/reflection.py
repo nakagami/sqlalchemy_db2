@@ -121,20 +121,20 @@ class DB2Reflector:
         self.identifier_preparer = dialect.identifier_preparer
 
     def normalize_name(self, name):
-        if name is not None:
-            requires_quotes = self.identifier_preparer._requires_quotes(
-                name.lower()
-            )
-            return (
-                name.lower()
-                if name.upper() == name and not requires_quotes
-                else name
-            )
-        return name
+        if not name:
+            return name
+        requires_quotes = self.identifier_preparer._requires_quotes(
+            name.lower()
+        )
+        return (
+            name.lower()
+            if name.upper() == name and not requires_quotes
+            else name
+        )
 
     def denormalize_name(self, name):
-        if name is None:
-            return None
+        if not name:
+            return name
         lower_name = name.lower()
         requires_quotes = self.identifier_preparer._requires_quotes(lower_name)
         if lower_name == name and not requires_quotes:

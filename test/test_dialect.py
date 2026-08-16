@@ -225,8 +225,12 @@ class CompilationTest(unittest.TestCase):
         reflector = DB2Reflector(self.dialect)
         self.assertEqual(reflector.normalize_name("MY_TABLE"), "my_table")
         self.assertEqual(reflector.normalize_name("my_table"), "my_table")
+        self.assertEqual(reflector.normalize_name(""), "")
+        self.assertIsNone(reflector.normalize_name(None))
         self.assertEqual(reflector.denormalize_name("my_table"), "MY_TABLE")
         self.assertEqual(reflector.denormalize_name("MY_TABLE"), "MY_TABLE")
+        self.assertEqual(reflector.denormalize_name(""), "")
+        self.assertIsNone(reflector.denormalize_name(None))
 
     def test_reflector_mock_methods(self):
         from unittest.mock import MagicMock
