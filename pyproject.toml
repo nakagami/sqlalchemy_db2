@@ -25,7 +25,7 @@ classifiers = [
 ]
 dependencies = [
     "sqlalchemy>=2.0",
-    "pydrda>=0.6.1",
+    "pydrda>=0.6.2",
 ]
 dynamic = ["readme", "version"]
 
