@@ -327,7 +327,6 @@ class DB2Reflector:
         )
         table_name = self.denormalize_name(table_name)
         sysindexes = self.sys_indexes
-        col_finder = re.compile(r"(\w+)")
         query = (
             sql.select(sysindexes.c.colnames, sysindexes.c.indname)
             .where(
@@ -342,7 +341,7 @@ class DB2Reflector:
         pk_columns = []
         pk_name = None
         for r in connection.execute(query):
-            cols = col_finder.findall(r[0])
+            cols = [col for col in re.split(r"[+-]", r[0]) if col]
             pk_columns.extend(cols)
             if not pk_name:
                 pk_name = self.normalize_name(r[1])
@@ -360,7 +359,6 @@ class DB2Reflector:
         )
         table_name = self.denormalize_name(table_name)
         syscols = self.sys_columns
-        col_finder = re.compile(r"(\w+)")
         query = (
             sql.select(syscols.c.colname)
             .where(
@@ -370,13 +368,9 @@ class DB2Reflector:
                     syscols.c.keyseq > 0,
                 )
             )
-            .order_by(syscols.c.tabschema, syscols.c.tabname)
+            .order_by(syscols.c.keyseq)
         )
-        pk_columns = []
-        for r in connection.execute(query):
-            cols = col_finder.findall(r[0])
-            pk_columns.extend(cols)
-        return [self.normalize_name(col) for col in pk_columns]
+        return [self.normalize_name(r[0]) for r in connection.execute(query)]
 
     @reflection.cache
     def get_foreign_keys(self, connection, table_name, schema=None, **kw):
@@ -385,7 +379,6 @@ class DB2Reflector:
         normalized_default_schema = self.normalize_name(default_schema)
         table_name = self.denormalize_name(table_name)
         sysfkeys = self.sys_foreignkeys
-        systbl = self.sys_tables
         query = (
             sql.select(
                 sysfkeys.c.fkname,
@@ -397,20 +390,13 @@ class DB2Reflector:
                 sysfkeys.c.pktabname,
                 sysfkeys.c.pkcolname,
             )
-            .select_from(
-                join(
-                    systbl,
-                    sysfkeys,
-                    and_(
-                        systbl.c.tabname == sysfkeys.c.pktabname,
-                        systbl.c.tabschema == sysfkeys.c.pktabschema,
-                    ),
+            .where(
+                and_(
+                    sysfkeys.c.fktabschema == current_schema,
+                    sysfkeys.c.fktabname == table_name,
                 )
             )
-            .where(systbl.c.type == "T")
-            .where(systbl.c.tabschema == current_schema)
-            .where(sysfkeys.c.fktabname == table_name)
-            .order_by(systbl.c.tabname)
+            .order_by(sysfkeys.c.fkname, sysfkeys.c.colno)
         )
         fschema = {}
         for r in connection.execute(query):
@@ -514,7 +500,6 @@ class DB2Reflector:
             .order_by(sysidx.c.tabname)
         )
         indexes = []
-        col_finder = re.compile(r"(\w+)")
         for r in connection.execute(query):
             index_name = r[0]
             column_text = r[1]
@@ -528,7 +513,8 @@ class DB2Reflector:
                 continue
             normalized_columns = [
                 self.normalize_name(col)
-                for col in col_finder.findall(column_text)
+                for col in re.split(r"[+-]", column_text)
+                if col
             ]
             indexes.append({
                 "name": self.normalize_name(index_name),
@@ -565,7 +551,7 @@ class DB2Reflector:
                     sysconst.c.type == "U",
                 )
             )
-            .order_by(syskeycol.c.constname)
+            .order_by(syskeycol.c.constname, syskeycol.c.colseq)
         )
         unique_consts = []
         curr_const = None

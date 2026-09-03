@@ -44,6 +44,22 @@ class ConnectArgsTest(unittest.TestCase):
         dbapi = DB2Dialect_asyn.import_dbapi()
         self.assertEqual(dbapi.paramstyle, "qmark")
         self.assertTrue(hasattr(dbapi, "OperationalError"))
+        self.assertEqual(dbapi.apilevel, "2.0")
+        self.assertEqual(dbapi.threadsafety, 1)
+
+    def test_pydrda_is_query_detection(self):
+        from drda.cursor import _is_query
+        self.assertTrue(_is_query("SELECT 1 FROM SYSIBM.SYSDUMMY1"))
+        self.assertTrue(_is_query("  select * from t"))
+        self.assertTrue(_is_query("WITH cte AS (SELECT 1 FROM SYSIBM.SYSDUMMY1) SELECT * FROM cte"))
+        self.assertTrue(_is_query("VALUES (1, 'a')"))
+        self.assertTrue(_is_query("/* comment */ SELECT 1 FROM SYSIBM.SYSDUMMY1"))
+        self.assertTrue(_is_query("-- line comment\nSELECT 1 FROM SYSIBM.SYSDUMMY1"))
+        self.assertTrue(_is_query("(SELECT 1 FROM SYSIBM.SYSDUMMY1)"))
+        self.assertFalse(_is_query("INSERT INTO t VALUES (1)"))
+        self.assertFalse(_is_query("UPDATE t SET x = 1"))
+        self.assertFalse(_is_query("DELETE FROM t"))
+        self.assertFalse(_is_query("SET CURRENT ISOLATION = CS"))
 
 
 class IsolationLevelTest(unittest.TestCase):
@@ -188,6 +204,24 @@ class CompilationTest(unittest.TestCase):
         self.assertIn("t CLOB", sql)
         self.assertIn("bl BLOB(1M)", sql)
 
+    def test_create_table_ddl_unbounded_varchar(self):
+        from sqlalchemy.schema import CreateTable
+        metadata = sa.MetaData()
+        table = sa.Table(
+            "test_tbl_unbounded", metadata,
+            sa.Column("id", sa.Integer, primary_key=True),
+            sa.Column("s", sa.String),
+            sa.Column("u", sa.Unicode),
+        )
+        sql = str(CreateTable(table).compile(dialect=self.dialect))
+        self.assertIn("s VARCHAR(255)", sql)
+        self.assertIn("u VARGRAPHIC(255)", sql)
+
+    def test_pre_ping_select_one(self):
+        stmt = sa.select(1)
+        sql = str(stmt.compile(dialect=self.dialect))
+        self.assertEqual(sql, "SELECT 1 FROM SYSIBM.SYSDUMMY1")
+
     def test_select_limit_offset(self):
         metadata = sa.MetaData()
         table = sa.Table("test_tbl", metadata, sa.Column("id", sa.Integer))
@@ -261,6 +295,11 @@ class CompilationTest(unittest.TestCase):
         pk = reflector.get_pk_constraint(conn, "tbl1")
         self.assertEqual(pk, {"constrained_columns": ["id"], "name": "pk_tbl1"})
 
+        # Composite PK with special characters
+        conn.execute.return_value = [("+COL$1-COL#2", "PK_SPECIAL")]
+        pk = reflector.get_pk_constraint(conn, "tbl1")
+        self.assertEqual(pk, {"constrained_columns": ["col$1", "col#2"], "name": "pk_special"})
+
         conn.execute.return_value = [
             ("FK_T2_T1", "MYSCHEMA", "T2", "T1_ID", "PK_T1", "MYSCHEMA", "T1", "ID")
         ]
@@ -277,6 +316,14 @@ class CompilationTest(unittest.TestCase):
         self.assertEqual(indexes[0]["name"], "ix_name")
         self.assertEqual(indexes[0]["column_names"], ["name"])
         self.assertFalse(indexes[0]["unique"])
+
+        # Index with special characters and multiple columns
+        conn.execute.return_value = [("IX_MULTI", "+COL$A-COL$B", "U", 0)]
+        indexes = reflector.get_indexes(conn, "tbl1")
+        self.assertEqual(len(indexes), 1)
+        self.assertEqual(indexes[0]["name"], "ix_multi")
+        self.assertEqual(indexes[0]["column_names"], ["col$a", "col$b"])
+        self.assertTrue(indexes[0]["unique"])
 
         conn.execute.return_value = [("UQ_CODE", "CODE")]
         uqs = reflector.get_unique_constraints(conn, "tbl1")

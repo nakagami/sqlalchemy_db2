@@ -122,8 +122,13 @@ class AsyncAdapt_drda_cursor:
         pass
 
     def __iter__(self):
-        while self._rows:
-            yield self._rows.popleft()
+        return self
+
+    def __next__(self):
+        r = self.fetchone()
+        if r is None:
+            raise StopIteration
+        return r
 
     def fetchone(self):
         if self._rows:
@@ -153,7 +158,7 @@ class AsyncAdapt_drda_connection(AdaptedConnection):
         self._connection = connection
         self._execute_mutex = asyncio.Lock()
 
-    def ping(self, reconnect):
+    def ping(self, reconnect=False):
         return self._connection.is_connect()
 
     def autocommit(self, value):
@@ -174,7 +179,14 @@ class AsyncAdapt_drda_connection(AdaptedConnection):
         # it's not awaitable.
         sock = getattr(self._connection, "sock", None)
         if sock is not None:
-            sock.close()
+            writer = getattr(sock, "_writer", None)
+            if writer is not None:
+                try:
+                    writer.close()
+                except Exception:
+                    pass
+            sock._reader = None
+            sock._writer = None
 
     def close(self) -> None:
         self.await_(self._connection.close())
@@ -191,6 +203,8 @@ class AsyncAdapt_drda_dbapi:
         self.asyn = asyn
         self.syn = syn
         self.paramstyle = "qmark"
+        self.apilevel = "2.0"
+        self.threadsafety = 1
         self._init_dbapi_attributes()
 
     def _init_dbapi_attributes(self):
@@ -216,6 +230,9 @@ class AsyncAdapt_drda_dbapi:
             "DATE",
             "TIME",
             "ROWID",
+            "Date",
+            "Time",
+            "Timestamp",
             "Binary",
         ):
             setattr(self, name, getattr(drda, name))

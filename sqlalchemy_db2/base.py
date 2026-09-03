@@ -8,6 +8,7 @@ from sqlalchemy import types as sa_types
 from sqlalchemy import util
 from sqlalchemy.engine import default
 from sqlalchemy.sql import compiler, operators
+import re
 
 import drda
 
@@ -213,13 +214,13 @@ class DB2TypeCompiler(compiler.GenericTypeCompiler):
         return "DBCLOB(1M)" if length in (None, 0) else f"DBCLOB({length})"
 
     def visit_VARCHAR(self, type_, **kw):
-        return f"VARCHAR({type_.length})"
+        return f"VARCHAR({type_.length})" if type_.length else "VARCHAR(255)"
 
     def visit_LONGVARCHAR(self, type_, **kw):
         return "LONG VARCHAR"
 
     def visit_VARGRAPHIC(self, type_, **kw):
-        return f"VARGRAPHIC({type_.length})"
+        return f"VARGRAPHIC({type_.length})" if type_.length else "VARGRAPHIC(255)"
 
     def visit_LONGVARGRAPHIC(self, type_, **kw):
         return "LONG VARGRAPHIC"
@@ -349,9 +350,6 @@ class DB2DDLCompiler(compiler.DDLCompiler):
         ]
         if not column.nullable or column.primary_key:
             col_spec.append("NOT NULL")
-        default = self.get_column_default_string(column)
-        if default is not None:
-            col_spec.extend(["WITH DEFAULT", default])
         auto_column = column.table._autoincrement_column
         if column is auto_column:
             col_spec.extend([
@@ -359,6 +357,10 @@ class DB2DDLCompiler(compiler.DDLCompiler):
                 "AS IDENTITY",
                 "(START WITH 1)",
             ])
+        else:
+            default = self.get_column_default_string(column)
+            if default is not None:
+                col_spec.extend(["WITH DEFAULT", default])
         return " ".join(col_spec)
 
     def define_constraint_cascades(self, constraint):
@@ -389,6 +391,7 @@ class DB2DDLCompiler(compiler.DDLCompiler):
 
 class DB2IdentifierPreparer(compiler.IdentifierPreparer):
     reserved_words = RESERVED_WORDS
+    legal_characters = re.compile(r"^[a-zA-Z0-9_$#@]+$")
     illegal_initial_characters = {str(i) for i in range(10)}.union(["_", "$"])
 
     def _requires_quotes(self, value: str) -> bool:
@@ -426,13 +429,13 @@ class DB2ExecutionContext(default.DefaultExecutionContext):
         cursor = self.cursor
         identity_sql = "SELECT IDENTITY_VAL_LOCAL() FROM SYSIBM.SYSDUMMY1"
         conn._cursor_execute(cursor, identity_sql, (), self)
-        row = cursor.fetchall()[0]
-        if row[0] is not None:
-            self._lastrowid = int(row[0])
+        rows = cursor.fetchall()
+        if rows and rows[0][0] is not None:
+            self._lastrowid = int(rows[0][0])
 
     def fire_sequence(self, seq, type_):
         formatted_seq = self.dialect.identifier_preparer.format_sequence(seq)
-        sql = f"SELECT NEXTVAL FOR {formatted_seq} FROM SYSIBM.SYSDUMMY1"
+        sql = f"SELECT NEXT VALUE FOR {formatted_seq} FROM SYSIBM.SYSDUMMY1"
         return self._execute_scalar(sql, type_)
 
 
@@ -471,9 +474,6 @@ class DB2Dialect_pydrda_base(default.DefaultDialect):
     type_compiler = DB2TypeCompiler
     preparer = DB2IdentifierPreparer
     execution_ctx_cls = DB2ExecutionContext
-
-    # DB2 has no SELECT without FROM
-    _dialect_specific_select_one = "1 FROM SYSIBM.SYSDUMMY1"
 
     _isolation_lookup = {
         "READ UNCOMMITTED": "UR",
@@ -577,6 +577,10 @@ class DB2Dialect_pydrda_base(default.DefaultDialect):
         qry = url.query
 
         opts.update(qry)
+        if "port" not in opts or opts["port"] is None:
+            opts["port"] = 50000
+        else:
+            opts["port"] = int(opts["port"])
         if "use_ssl" in opts:
             opts["use_ssl"] = util.asbool(opts["use_ssl"])
         if "timeout" in opts:
